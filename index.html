@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CO₂ Monitor Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      background-color: #f4f6f8;
+      font-family: 'Inter', sans-serif;
+    }
+    .card {
+      border-radius: 1rem;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+      background-color: #fff;
+      padding: 1.5rem;
+    }
+    @media (max-width: 640px) {
+      .card {
+        padding: 1rem;
+      }
+      .max-w-3xl {
+        max-width: 100vw;
+      }
+      #co2Value {
+        font-size: 2.5rem;
+      }
+    }
+  </style>
+</head>
+<body class="flex items-center justify-center min-h-screen">
+  <div class="w-full max-w-3xl space-y-6 px-2 sm:px-0">
+    <div class="card text-center">
+      <h1 class="text-2xl font-bold text-gray-800 mb-2">CO₂ Monitor</h1>
+      <p class="text-gray-500">Real-Time Indoor CO₂ Levels</p>
+      <div class="mt-4">
+        <span class="text-5xl font-extrabold text-blue-600" id="co2Value">--</span>
+        <span class="text-xl text-gray-600">ppm</span>
+      </div>
+        <div class="mt-2">
+          <span id="statusIndicator" class="text-sm font-semibold text-yellow-500">Connecting...</span>
+        </div>
+    </div>
+
+    <div class="card">
+      <canvas id="co2Chart" height="300"></canvas>
+    </div>
+  </div>
+
+  <script>
+  // Track the last minute label shown
+  let lastMinuteLabel = "";
+    const ctx = document.getElementById('co2Chart').getContext('2d');
+    // Store full time for each data point
+    const fullTimes = [];
+
+    const co2Chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'CO₂ (ppm)',
+          data: [],
+          borderColor: '#2563EB', // Tailwind blue-600
+          backgroundColor: 'rgba(37, 99, 235, 0.1)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3,
+          pointBackgroundColor: '#2563EB'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 500 },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              title: function(context) {
+                // Show full time in tooltip
+                const idx = context[0].dataIndex;
+                return fullTimes[idx] || "";
+              }
+            }
+          }
+        },
+        scales: {
+          x: { 
+            title: { display: true, text: 'Time', color: '#374151', font: { weight: 'bold' } }
+          },
+          y: { 
+            beginAtZero: true,
+            title: { display: true, text: 'CO₂ (ppm)', color: '#374151', font: { weight: 'bold' } }
+          }
+        }
+      }
+    });
+
+    async function fetchData() {
+      const statusEl = document.getElementById('statusIndicator');
+      try {
+        const response = await fetch("/data");
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+
+        if (data.co2 === 0) {
+          statusEl.innerText = "Connecting...";
+          statusEl.className = "text-sm font-semibold text-yellow-500";
+        } else {
+          statusEl.innerText = "Connected";
+          statusEl.className = "text-sm font-semibold text-green-600";
+
+          const now = new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit'});
+          const fullTime = new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          document.getElementById('co2Value').innerText = data.co2;
+
+          // Only add non-zero values to the chart
+          const labels = co2Chart.data.labels;
+          let labelToAdd = "";
+          const currMinute = now.split(":")[1];
+          if (lastMinuteLabel !== currMinute) {
+            labelToAdd = now;
+            lastMinuteLabel = currMinute;
+          }
+          labels.push(labelToAdd);
+          co2Chart.data.datasets[0].data.push(data.co2);
+          fullTimes.push(fullTime);
+
+          if (labels.length > 20) {
+            labels.shift();
+            co2Chart.data.datasets[0].data.shift();
+            fullTimes.shift();
+          }
+
+          co2Chart.update();
+        }
+      } catch (err) {
+        statusEl.innerText = "Disconnected";
+        statusEl.className = "text-sm font-semibold text-red-600";
+        console.error("Error fetching CO₂ data:", err);
+      }
+    }
+
+    setInterval(fetchData, 5500);
+    fetchData();
+  </script>
+</body>
+</html>
